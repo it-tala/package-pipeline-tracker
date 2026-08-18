@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tala Package Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Fraunces:opsz,wght@9..144,560&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --paper:#F7F6F1; --card:#FFFFFF; --ink:#24261F; --muted:#7C7A6F; --line:#E4E2D8;
+  --teal:#0F6E56; --teal-soft:#E1F5EE; --coral:#B5401F; --coral-soft:#FAE9E2;
+  --amber:#8A5A0B; --amber-soft:#FAEEDA; --violet:#4A4390; --violet-soft:#EEEDFA;
+  --gray-soft:#EFEDE4;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 "Archivo",system-ui,sans-serif;padding:22px clamp(14px,3vw,40px) 60px}
+a{color:var(--teal)}
+header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:4px}
+h1{font-family:"Fraunces",serif;font-weight:560;font-size:27px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.sub b{color:var(--ink);font-weight:500}
+#refresh{margin-left:auto;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 14px;font:500 13px "Archivo";cursor:pointer;color:var(--ink)}
+#refresh:hover{border-color:var(--muted)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 20px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 14px;font-size:13px;cursor:pointer;color:var(--muted)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.grid{display:grid;gap:12px}
+.metrics{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));margin-bottom:20px}
+.metric{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.metric .l{font-size:12px;color:var(--muted);margin-bottom:2px}
+.metric .v{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.metric .v small{font-size:13px;color:var(--muted);font-weight:400}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:20px}
+.panel h2{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.count{font-size:11px;background:var(--coral-soft);color:var(--coral);border-radius:10px;padding:2px 9px;font-weight:500}
+.count.ok{background:var(--teal-soft);color:var(--teal)}
+.funnel{display:grid;grid-template-columns:110px 1fr 34px;gap:6px 10px;align-items:center;font-size:13px}
+.funnel .bar{height:20px;border-radius:5px;background:var(--teal);min-width:2px;transition:width .4s}
+.funnel .bar.q{background:#B4B2A9}
+.funnel .bar.o{background:#7F77DD}
+.funnel .n{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.qrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;flex-wrap:wrap}
+.qrow:first-of-type{border-top:0}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.qrow .who{font-weight:500}
+.qrow .ctx{color:var(--muted)}
+.qrow .sp{flex:1}
+.badge{font-size:11.5px;border-radius:10px;padding:2px 10px;white-space:nowrap;font-weight:500}
+.overdue-tag{font-size:11.5px;color:var(--coral);font-weight:500}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+.hgrid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.hotel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 17px}
+.hotel .top{display:flex;align-items:baseline;gap:8px}
+.hotel .nm{font-weight:600;font-size:14.5px}
+.hotel .sc{margin-left:auto;font-size:11.5px;border-radius:10px;padding:2px 9px;font-weight:500;background:var(--gray-soft);color:var(--muted)}
+.hotel .sc.s4{background:var(--teal-soft);color:var(--teal)}
+.hotel .sc.s3{background:var(--amber-soft);color:var(--amber)}
+.hotel .meta{font-size:12px;color:var(--muted);margin:3px 0 10px}
+.hotel .flag{color:var(--coral);font-weight:500}
+.arow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.arow .an{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow .an a{color:inherit;text-decoration:none}
+.arow .an a:hover{text-decoration:underline}
+.arow .sp{flex:1}
+.arow .ph{color:var(--muted);font-size:12px;white-space:nowrap}
+.scrape{display:flex;gap:20px;flex-wrap:wrap;font-size:13px}
+.scrape .a b{font-weight:600}
+.scrape .a span{color:var(--muted)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs .chip{font-size:12.5px}
+#err{background:var(--coral-soft);color:var(--coral);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none}
+footer{margin-top:26px;color:var(--muted);font-size:12px}
+@media (max-width:560px){body{padding:16px 12px 40px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tala pipeline</h1>
+  <span class="sub" id="stamp">loading…</span>
+  <button id="refresh" onclick="loadAll()">Refresh</button>
+</header>
+<div class="sub" id="mode"></div>
+<div id="err"></div>
+<div class="chips" id="areas"></div>
+
+<div class="grid metrics" id="metrics"></div>
+
+<div class="panel">
+  <h2>Follow-up queue <span class="count" id="qcount">–</span></h2>
+  <div id="queue"></div>
+</div>
+
+<div class="panel">
+  <h2>Funnel — furthest agent per hotel</h2>
+  <div class="funnel" id="funnel"></div>
+</div>
+
+<div class="panel">
+  <h2>Scrape → enrichment status</h2>
+  <div class="scrape" id="scrape"></div>
+</div>
+
+<div class="tabs" id="hfilters"></div>
+<div class="grid hgrid" id="hotels"></div>
+
+<footer>Read-only view of the pipeline tracker. Every update happens in the spreadsheet; this page follows within ~5 minutes.</footer>
+
+<script src="config.js"></script>
+<script>
+// ── Column map (MASTER, 0-indexed) — must match the template exactly ──
+const C = {ID:0, AREA:1, NAME:2, MAPS:3, ADDR:4, STATUS:5, CONDO:6, ROOMS:7,
+  ADR:8, ADRFLAG:9, CHAIN:10, RENO:11, RENOSRC:12, REVIEW:13, NOTES:14,
+  RATING:15, BIG:16, SCORE:17, VALID:18, BEST:19, AGENT0:20, ABLK:11};
+const AF = {LINK:0, NAME:1, EMAIL:2, PHONE:3, SUBURB:4, STAGE:5, SENT:6, REPLY:7, NEXT:8, OVER:9, REMARK:10};
+const STAGE_ORDER = ["SKIP","RECYCLED","QUEUED","MSG SENT","REPLIED","CALL SET","FORM BACK","PRESENTATION","DEAL"];
+const STAGE_STYLE = {
+  "QUEUED":["var(--gray-soft)","var(--muted)"], "MSG SENT":["var(--violet-soft)","var(--violet)"],
+  "REPLIED":["var(--violet-soft)","var(--violet)"], "CALL SET":["var(--teal-soft)","var(--teal)"],
+  "FORM BACK":["var(--teal-soft)","var(--teal)"], "PRESENTATION":["var(--teal-soft)","var(--teal)"],
+  "DEAL":["var(--teal)","#fff"], "RECYCLED":["var(--coral-soft)","var(--coral)"], "SKIP":["var(--gray-soft)","var(--muted)"]};
+
+let hotels = [], scrape = [], area = "ALL", hfilter = "ALL";
+
+function parseDate(s){
+  if(!s) return null;
+  s = String(s).trim(); if(!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  const d = new Date(s); return isNaN(d) ? null : d;
+}
+const today = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+
+function rowToHotel(r){
+  const agents = [];
+  for(let i=0;i<3;i++){
+    const b = C.AGENT0 + i*C.ABLK;
+    const name = (r[b+AF.NAME]||"").trim();
+    const stage = (r[b+AF.STAGE]||"").trim().toUpperCase();
+    if(!name && !stage) continue;
+    agents.push({slot:i+1, link:r[b+AF.LINK]||"", name:name||"(no name)", email:r[b+AF.EMAIL]||"",
+      phone:r[b+AF.PHONE]||"", suburb:r[b+AF.SUBURB]||"", stage:stage||"QUEUED",
+      sent:parseDate(r[b+AF.SENT]), reply:parseDate(r[b+AF.REPLY]), next:parseDate(r[b+AF.NEXT]),
+      overdue:(r[b+AF.OVER]||"").trim().toUpperCase()==="MOVE ON", remark:r[b+AF.REMARK]||""});
+  }
+  return {id:r[C.ID]||"", area:(r[C.AREA]||"").trim(), name:(r[C.NAME]||"").trim(),
+    maps:r[C.MAPS]||"", status:(r[C.STATUS]||"").trim().toUpperCase(),
+    condo:(r[C.CONDO]||"").trim(), rooms:+r[C.ROOMS]||0, adr:+r[C.ADR]||0,
+    adrFlag:(r[C.ADRFLAG]||"").trim().toUpperCase(), score:+r[C.SCORE]||0,
+    validated:(r[C.VALID]||"").trim().toLowerCase()==="yes",
+    best:(r[C.BEST]||"").trim().toUpperCase()||"QUEUED", agents};
+}
+
+function fetchCsv(url){
+  return new Promise((res, rej) => Papa.parse(url, {download:true, skipEmptyLines:true,
+    complete: x => res(x.data), error: rej}));
+}
+
+async function loadAll(){
+  const cfg = window.TALA_CONFIG, err = document.getElementById("err");
+  err.style.display = "none";
+  try{
+    if(cfg.DEMO_MODE){ [hotels, scrape] = demoData(); document.getElementById("mode").textContent = "Demo data — edit config.js to connect your sheet."; }
+    else{
+      const [m, s] = await Promise.all([fetchCsv(cfg.MASTER_CSV_URL), fetchCsv(cfg.SCRAPE_CSV_URL)]);
+      hotels = m.slice(1).filter(r => (r[C.NAME]||"").trim()).map(rowToHotel);
+      scrape = s.slice(1).filter(r => (r[1]||"").trim()).map(r => ({area:(r[0]||"").trim(), name:r[1], enriched:(r[6]||"").trim().toUpperCase()==="YES"}));
+      document.getElementById("mode").textContent = "";
+    }
+    document.getElementById("stamp").innerHTML = "updated <b>" + new Date().toLocaleTimeString() + "</b>";
+    render();
+  }catch(e){
+    err.textContent = "Couldn't load the sheet. Check the published CSV URLs in config.js and that the tabs are published. (" + e.message + ")";
+    err.style.display = "block";
+  }
+}
+
+function badge(stage){
+  const [bg, fg] = STAGE_STYLE[stage] || STAGE_STYLE["QUEUED"];
+  return `<span class="badge" style="background:${bg};color:${fg}">${stage.toLowerCase()}</span>`;
+}
+
+function render(){
+  const hs = hotels.filter(h => area==="ALL" || h.area===area);
+  const areas = [...new Set(hotels.map(h=>h.area).filter(Boolean))].sort();
+  document.getElementById("areas").innerHTML =
+    [`<span class="chip ${area==="ALL"?"on":""}" onclick="setArea('ALL')">All areas</span>`]
+    .concat(areas.map(a=>`<span class="chip ${area===a?"on":""}" onclick="setArea('${a}')">${a}</span>`)).join("");
+
+  // metrics
+  const qualified = hs.filter(h=>h.status==="QUALIFIED");
+  const validated = qualified.filter(h=>h.validated);
+  const allAgents = hs.flatMap(h=>h.agents);
+  const idx = s => STAGE_ORDER.indexOf(s);
+  const messaged = allAgents.filter(a=>idx(a.stage)>=idx("MSG SENT")||a.stage==="RECYCLED").length;
+  const replied  = allAgents.filter(a=>idx(a.stage)>=idx("REPLIED")&&a.stage!=="RECYCLED").length;
+  const forms = allAgents.filter(a=>idx(a.stage)>=idx("FORM BACK")&&a.stage!=="RECYCLED").length;
+  const deals = allAgents.filter(a=>a.stage==="DEAL").length;
+  const M = [["Hotels",hs.length],["Qualified",qualified.length],
+    ["Validated",validated.length+`<small>/${qualified.length}</small>`],
+    ["Messaged",messaged],["Replied",replied],
+    ["Reply rate",messaged?Math.round(replied/messaged*100)+"%":"–"],
+    ["Forms back",forms],["Deals",deals]];
+  document.getElementById("metrics").innerHTML = M.map(([l,v])=>
+    `<div class="metric"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+  // follow-up queue
+  const t = today();
+  const due = [];
+  hs.forEach(h => h.agents.forEach(a => {
+    if(a.stage==="RECYCLED"||a.stage==="SKIP"||a.stage==="DEAL") return;
+    if(a.overdue) due.push({h,a,kind:"overdue"});
+    else if(a.next && a.next<=t) due.push({h,a,kind:"due"});
+  }));
+  due.sort((x,y)=>(y.kind==="overdue")-(x.kind==="overdue"));
+  const qc = document.getElementById("qcount");
+  qc.textContent = due.length + " pending"; qc.className = "count" + (due.length? "" : " ok");
+  document.getElementById("queue").innerHTML = due.map(d=>
+    `<div class="qrow"><span class="dot" style="background:${d.kind==="overdue"?"var(--coral)":"var(--teal)"}"></span>
+     <span class="who">${d.a.name}</span><span class="ctx">${d.h.name} · ${d.h.area}</span>
+     <span class="sp"></span>${badge(d.a.stage)}
+     ${d.kind==="overdue"?'<span class="overdue-tag">7d no reply — move to next agent</span>':""}</div>`).join("")
+    || `<div class="empty">Queue is clear — nothing due today.</div>`;
+
+  // funnel by BEST STAGE
+  const funnelStages = ["QUEUED","MSG SENT","REPLIED","CALL SET","FORM BACK","PRESENTATION","DEAL"];
+  const counts = funnelStages.map(s => hs.filter(h=>h.best===s).length);
+  const max = Math.max(1,...counts);
+  document.getElementById("funnel").innerHTML = funnelStages.map((s,i)=>
+    `<span>${s.toLowerCase()}</span><div class="bar ${i===0?"q":i<3?"o":""}" style="width:${counts[i]/max*100}%"></div><span class="n">${counts[i]}</span>`).join("");
+
+  // scrape status
+  const sByArea = {};
+  scrape.filter(s=>area==="ALL"||s.area===area).forEach(s=>{
+    sByArea[s.area] = sByArea[s.area]||{n:0,e:0}; sByArea[s.area].n++; if(s.enriched) sByArea[s.area].e++;});
+  document.getElementById("scrape").innerHTML = Object.entries(sByArea).map(([a,v])=>
+    `<div class="a"><b>${a}</b> <span>${v.e}/${v.n} enriched${v.e<v.n?" · "+(v.n-v.e)+" waiting for Manus":""}</span></div>`).join("")
+    || `<div class="empty">No scrape rows for this area.</div>`;
+
+  // hotel cards
+  const filters = [["ALL","All"],["QUALIFIED","Qualified"],["NEEDS_VAL","Needs validation"],["ACTIVE","In outreach"]];
+  document.getElementById("hfilters").innerHTML = filters.map(([k,l])=>
+    `<span class="chip ${hfilter===k?"on":""}" onclick="setHF('${k}')">${l}</span>`).join("");
+  let cards = hs.filter(h=>{
+    if(hfilter==="QUALIFIED") return h.status==="QUALIFIED";
+    if(hfilter==="NEEDS_VAL") return h.status==="QUALIFIED" && !h.validated;
+    if(hfilter==="ACTIVE") return STAGE_ORDER.indexOf(h.best) >= STAGE_ORDER.indexOf("MSG SENT");
+    return true;});
+  cards.sort((a,b)=> b.score-a.score || STAGE_ORDER.indexOf(b.best)-STAGE_ORDER.indexOf(a.best) || b.rooms-a.rooms);
+  document.getElementById("hotels").innerHTML = cards.map(h=>{
+    const flags = [];
+    if(h.adrFlag==="CHECK") flags.push('<span class="flag">ADR check</span>');
+    if(h.status.startsWith("DISQUALIFIED")) flags.push('<span class="flag">'+h.status.toLowerCase()+"</span>");
+    else if(!h.validated) flags.push("not validated");
+    return `<div class="hotel"><div class="top">
+      <span class="nm">${h.maps?`<a href="${h.maps}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${h.name}</a>`:h.name}</span>
+      <span class="sc ${h.score>=4?"s4":h.score===3?"s3":""}">${h.score?"score "+h.score:"unscored"}</span></div>
+      <div class="meta">${h.area} · ${h.rooms||"?"} rooms · ADR $${h.adr?h.adr.toFixed(0):"?"} · condo ${h.condo||"?"}${flags.length?" · ":""}${flags.join(" · ")}</div>
+      ${h.agents.map(a=>`<div class="arow">
+        <span class="an">${a.link?`<a href="${a.link}" target="_blank" rel="noopener">${a.name}</a>`:a.name}</span>
+        <span class="ph">${a.phone}</span><span class="sp"></span>${badge(a.stage)}</div>`).join("")
+        || '<div class="empty">No agents yet.</div>'}
+    </div>`;}).join("") || `<div class="empty">No hotels match this filter.</div>`;
+}
+
+function setArea(a){ area=a; render(); }
+function setHF(k){ hfilter=k; render(); }
+
+function demoData(){
+  const mk = (id,ar,nm,st,condo,rooms,adr,score,val,best,ags)=>({id,area:ar,name:nm,maps:"",status:st,condo,rooms,adr,adrFlag:"OK",score,validated:val,best,agents:ags});
+  const ag = (n,ph,stg,o,nx)=>({slot:1,link:"",name:n,email:"",phone:ph,suburb:"",stage:stg,sent:null,reply:null,next:nx?today():null,overdue:!!o,remark:""});
+  return [[
+    mk("TL-0001","SP NORTH","Chateau Beachside","QUALIFIED","Yes",100,69,4,true,"REPLIED",
+      [ag("D. Harper","61 4 1234 5678","REPLIED",0,1), ag("M. Chen","61 4 2345 6789","QUEUED"), ag("S. Patel","61 4 3456 7890","QUEUED")]),
+    mk("TL-0002","SP MIDDLE","Mantra on View","QUALIFIED","Yes",355,106,4,true,"FORM BACK",
+      [ag("R. Novak","61 4 9876 5432","FORM BACK",0,1), ag("L. Ortiz","61 4 8765 4321","RECYCLED"), ag("K. Webb","61 4 7654 3210","MSG SENT",1)]),
+    mk("TL-0003","SP SOUTH","Meriton Suites Southport","QUALIFIED","Yes",208,115,3,false,"QUEUED",
+      [ag("T. Reyes","61 4 1111 2222","QUEUED"), ag("A. Kim","61 4 3333 4444","QUEUED")]),
+    mk("TL-0004","SP NORTH","Paradise Island Resort","QUALIFIED","Yes",120,64,3,true,"CALL SET",
+      [ag("B. Singh","61 4 5555 6666","CALL SET",0,1), ag("E. Moss","61 4 7777 8888","QUEUED")]),
+    mk("TL-0005","SP MIDDLE","Dorsett Gold Coast","DISQUALIFIED — NOT CONDO","No",313,119,0,false,"QUEUED",[]),
+  ],[
+    {area:"SP NORTH",name:"Chateau Beachside",enriched:true},
+    {area:"SP NORTH",name:"Paradise Island Resort",enriched:true},
+    {area:"SP NORTH",name:"Budds Beach Apartments",enriched:false},
+    {area:"SP MIDDLE",name:"Mantra on View",enriched:true},
+    {area:"SP SOUTH",name:"Meriton Suites Southport",enriched:true},
+    {area:"SP SOUTH",name:"Broadbeach Savannah",enriched:false},
+    {area:"SP SOUTH",name:"Phoenician Resort",enriched:false},
+  ]];
+}
+
+loadAll();
+setInterval(loadAll, (window.TALA_CONFIG.REFRESH_MINUTES||5)*60*1000);
+</script>
+</body>
+</html>
