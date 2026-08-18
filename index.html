@@ -61,15 +61,27 @@ h1{font-family:"Fraunces",serif;font-weight:560;font-size:27px;letter-spacing:-.
 .hotel .flag{color:var(--coral);font-weight:500}
 .arow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .arow .an{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.arow .an a{color:inherit;text-decoration:none}
-.arow .an a:hover{text-decoration:underline}
+.lnk{color:inherit;text-decoration:none;border-bottom:1px dotted #C4C1B3}
+.lnk:hover{color:var(--teal);border-bottom:1px solid var(--teal)}
 .arow .sp{flex:1}
 .arow .ph{color:var(--muted);font-size:12px;white-space:nowrap}
-.scrape{display:flex;gap:20px;flex-wrap:wrap;font-size:13px}
-.scrape .a b{font-weight:600}
-.scrape .a span{color:var(--muted)}
-.tabs{display:flex;gap:8px;margin-bottom:12px}
-.tabs .chip{font-size:12.5px}
+.pill{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 13px;font-size:13px;white-space:nowrap}
+.pill small{color:var(--muted);font-size:11px;margin-left:7px}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.tree-h{font-family:"Fraunces",serif;font-weight:560;font-size:19px;margin:28px 0 4px}
+.tree-s{color:var(--muted);font-size:13px;margin-bottom:18px;max-width:74ch}
+.node{position:relative;margin-left:5px;padding:0 0 20px 24px;border-left:2px solid var(--line)}
+.node:last-child{border-left-color:transparent;padding-bottom:0}
+.node::before{content:"";position:absolute;left:-7px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--dot);box-shadow:0 0 0 3px var(--paper)}
+.node.off::before{background:var(--card);border:2px solid var(--line);box-shadow:0 0 0 3px var(--paper)}
+.nh{display:flex;align-items:center;gap:9px;cursor:pointer;flex-wrap:wrap}
+.nh .car{color:var(--muted);font-size:10px;width:9px;flex:none}
+.nt{font-weight:600;font-size:14.5px}
+.node.off .nt{color:var(--muted);font-weight:500}
+.nc{font-size:11.5px;border-radius:10px;padding:2px 9px;font-weight:500}
+.nw{font-size:12.5px;color:var(--muted);margin:3px 0 0 18px;max-width:74ch}
+.nn{font-size:12.5px;color:var(--teal);margin:3px 0 0 18px;max-width:74ch}
+.nbody{margin:13px 0 0 18px}
 #err{background:var(--coral-soft);color:var(--coral);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none}
 footer{margin-top:26px;color:var(--muted);font-size:12px}
 @media (max-width:560px){body{padding:16px 12px 40px}h1{font-size:22px}}
@@ -97,13 +109,9 @@ footer{margin-top:26px;color:var(--muted);font-size:12px}
   <div class="funnel" id="funnel"></div>
 </div>
 
-<div class="panel">
-  <h2>Scrape → enrichment status</h2>
-  <div class="scrape" id="scrape"></div>
-</div>
-
-<div class="tabs" id="hfilters"></div>
-<div class="grid hgrid" id="hotels"></div>
+<h2 class="tree-h">Pipeline</h2>
+<div class="tree-s">Every building sits in exactly one step. Open a step to see what is parked there and what moves it forward.</div>
+<div id="tree"></div>
 
 <footer>Read-only view of the pipeline tracker. Every update happens in the spreadsheet; this page follows within ~5 minutes.</footer>
 
@@ -121,7 +129,61 @@ const STAGE_STYLE = {
   "FORM BACK":["var(--teal-soft)","var(--teal)"], "PRESENTATION":["var(--teal-soft)","var(--teal)"],
   "DEAL":["var(--teal)","#fff"], "RECYCLED":["var(--coral-soft)","var(--coral)"], "SKIP":["var(--gray-soft)","var(--muted)"]};
 
-let hotels = [], scrape = [], area = "ALL", hfilter = "ALL";
+let hotels = [], scrape = [], area = "ALL";
+const collapsed = new Set();
+
+// -- Workflow tree ----------------------------------------------------
+// Every building sits in exactly one node. Order follows the pipeline:
+// scrape -> enrich -> validate -> outreach -> call -> pro forma -> deal.
+const NODES = [
+  {key:"WAITING", tone:"gray", title:"Waiting for enrichment",
+   what:"Scraped off Google Maps, nothing known yet beyond the name. These rows live in SCRAPE only — they have no MASTER row.",
+   next:"Feed the next batch into Manus (protocol V5.1)."},
+  {key:"REVIEW", tone:"coral", title:"Enriched — waiting for human review",
+   what:"Manus filled the details in. None of it counts until a human checks it: ADR conversion, phone format and listing links all fail quietly.",
+   next:"Verify the flagged fields, score the building, then set VALIDATED? = YES."},
+  {key:"NOAGENTS", tone:"amber", title:"Validated — no agents yet",
+   what:"The building qualifies, but nobody to contact has been collected for it.",
+   next:"Run the agent pass and fill agent block A1."},
+  {key:"READY", tone:"amber", title:"Ready for outreach",
+   what:"Validated, agents collected, nobody messaged yet. This is the queue the outreach day is drawn from.",
+   next:"Message agent A1 and set their STAGE = MSG SENT."},
+  {key:"MESSAGED", tone:"violet", title:"Messaged — waiting for a reply",
+   what:"First contact is out and the 7-day clock is running on that agent.",
+   next:"At 7 days with no reply, set them RECYCLED and start the next agent on the same building."},
+  {key:"TALKING", tone:"violet", title:"Replied — conversation open",
+   what:"An agent came back. The goal of this step is a booked call.",
+   next:"Set the call, then send the pro forma form."},
+  {key:"PROFORMA", tone:"teal", title:"Pro forma / presentation",
+   what:"Numbers are back. The yield case — this unit against comparable stock in the same building — is being built or presented.",
+   next:"Present the gap and the package that closes it."},
+  {key:"DEAL", tone:"teal", title:"Deal",
+   what:"Closed. The record leaves this pipeline here.",
+   next:"Copy the reference into the project tracker: design → production → install."},
+  {key:"EXHAUSTED", tone:"coral", title:"Agents exhausted",
+   what:"Every agent collected for this building was recycled without a reply. The building is still good; the contacts were not.",
+   next:"Collect fresh agents, or park it."},
+  {key:"OUT", tone:"gray", title:"Out of pipeline",
+   what:"Disqualified or marked SKIP. Kept on the sheet so it does not get re-scraped into the queue.",
+   next:""},
+];
+const TONE = {gray:["var(--gray-soft)","var(--muted)"], coral:["var(--coral-soft)","var(--coral)"],
+  amber:["var(--amber-soft)","var(--amber)"], violet:["var(--violet-soft)","var(--violet)"],
+  teal:["var(--teal-soft)","var(--teal)"]};
+
+// One building -> one node. Order matters: the first match wins.
+function nodeOf(h){
+  if(h.status.startsWith("DISQUALIFIED") || h.best==="SKIP") return "OUT";
+  if(!h.validated) return "REVIEW";
+  if(!h.agents.length) return "NOAGENTS";
+  if(h.best==="DEAL") return "DEAL";
+  if(h.best==="FORM BACK" || h.best==="PRESENTATION") return "PROFORMA";
+  if(h.best==="REPLIED" || h.best==="CALL SET") return "TALKING";
+  if(h.best==="MSG SENT") return "MESSAGED";
+  if(h.best==="RECYCLED") return "EXHAUSTED";
+  return "READY";
+}
+
 
 function parseDate(s){
   if(!s) return null;
@@ -178,9 +240,37 @@ async function loadAll(){
   }
 }
 
+// Sheet cells are untrusted — only http(s) URLs become links, everything else
+// renders as plain text.
+function safeUrl(u){
+  u = String(u||"").trim();
+  return /^https?:\/\//i.test(u) ? u.replace(/"/g,"%22") : "";
+}
+function link(url, text, title){
+  const u = safeUrl(url);
+  return u ? `<a class="lnk" href="${u}" target="_blank" rel="noopener" title="${title}">${text}</a>` : text;
+}
+const mapLink   = h => link(h.maps, h.name, "Open in Google Maps");
+const agentLink = a => link(a.link, a.name, "Open agent profile");
+
 function badge(stage){
   const [bg, fg] = STAGE_STYLE[stage] || STAGE_STYLE["QUEUED"];
   return `<span class="badge" style="background:${bg};color:${fg}">${stage.toLowerCase()}</span>`;
+}
+
+function hotelCard(h){
+  const flags = [];
+  if(h.adrFlag==="CHECK") flags.push('<span class="flag">ADR check</span>');
+  if(h.status.startsWith("DISQUALIFIED")) flags.push('<span class="flag">'+h.status.toLowerCase()+'</span>');
+  return `<div class="hotel"><div class="top">
+    <span class="nm">${mapLink(h)}</span>
+    <span class="sc ${h.score>=4?"s4":h.score===3?"s3":""}">${h.score?"score "+h.score:"unscored"}</span></div>
+    <div class="meta">${h.area} · ${h.rooms||"?"} rooms · ADR $${h.adr?h.adr.toFixed(0):"?"} · condo ${h.condo||"?"}${flags.length?" · ":""}${flags.join(" · ")}</div>
+    ${h.agents.map(a=>`<div class="arow">
+      <span class="an">${agentLink(a)}</span>
+      <span class="ph">${a.phone}</span><span class="sp"></span>${badge(a.stage)}</div>`).join("")
+      || '<div class="empty">No agents collected yet.</div>'}
+  </div>`;
 }
 
 function render(){
@@ -220,7 +310,7 @@ function render(){
   qc.textContent = due.length + " pending"; qc.className = "count" + (due.length? "" : " ok");
   document.getElementById("queue").innerHTML = due.map(d=>
     `<div class="qrow"><span class="dot" style="background:${d.kind==="overdue"?"var(--coral)":"var(--teal)"}"></span>
-     <span class="who">${d.a.name}</span><span class="ctx">${d.h.name} · ${d.h.area}</span>
+     <span class="who">${agentLink(d.a)}</span><span class="ctx">${mapLink(d.h)} · ${d.h.area}</span>
      <span class="sp"></span>${badge(d.a.stage)}
      ${d.kind==="overdue"?'<span class="overdue-tag">7d no reply — move to next agent</span>':""}</div>`).join("")
     || `<div class="empty">Queue is clear — nothing due today.</div>`;
@@ -232,65 +322,95 @@ function render(){
   document.getElementById("funnel").innerHTML = funnelStages.map((s,i)=>
     `<span>${s.toLowerCase()}</span><div class="bar ${i===0?"q":i<3?"o":""}" style="width:${counts[i]/max*100}%"></div><span class="n">${counts[i]}</span>`).join("");
 
-  // scrape status
-  const sByArea = {};
-  scrape.filter(s=>area==="ALL"||s.area===area).forEach(s=>{
-    sByArea[s.area] = sByArea[s.area]||{n:0,e:0}; sByArea[s.area].n++; if(s.enriched) sByArea[s.area].e++;});
-  document.getElementById("scrape").innerHTML = Object.entries(sByArea).map(([a,v])=>
-    `<div class="a"><b>${a}</b> <span>${v.e}/${v.n} enriched${v.e<v.n?" · "+(v.n-v.e)+" waiting for Manus":""}</span></div>`).join("")
-    || `<div class="empty">No scrape rows for this area.</div>`;
+  // workflow tree
+  const buckets = {};
+  NODES.forEach(n => buckets[n.key] = []);
+  hs.forEach(h => buckets[nodeOf(h)].push(h));
+  Object.keys(buckets).forEach(k => buckets[k].sort((a,b)=> b.score-a.score || b.rooms-a.rooms));
+  buckets.WAITING = scrape.filter(x => !x.enriched && (area==="ALL" || x.area===area));
 
-  // hotel cards
-  const filters = [["ALL","All"],["QUALIFIED","Qualified"],["NEEDS_VAL","Needs validation"],["ACTIVE","In outreach"]];
-  document.getElementById("hfilters").innerHTML = filters.map(([k,l])=>
-    `<span class="chip ${hfilter===k?"on":""}" onclick="setHF('${k}')">${l}</span>`).join("");
-  let cards = hs.filter(h=>{
-    if(hfilter==="QUALIFIED") return h.status==="QUALIFIED";
-    if(hfilter==="NEEDS_VAL") return h.status==="QUALIFIED" && !h.validated;
-    if(hfilter==="ACTIVE") return STAGE_ORDER.indexOf(h.best) >= STAGE_ORDER.indexOf("MSG SENT");
-    return true;});
-  cards.sort((a,b)=> b.score-a.score || STAGE_ORDER.indexOf(b.best)-STAGE_ORDER.indexOf(a.best) || b.rooms-a.rooms);
-  document.getElementById("hotels").innerHTML = cards.map(h=>{
-    const flags = [];
-    if(h.adrFlag==="CHECK") flags.push('<span class="flag">ADR check</span>');
-    if(h.status.startsWith("DISQUALIFIED")) flags.push('<span class="flag">'+h.status.toLowerCase()+"</span>");
-    else if(!h.validated) flags.push("not validated");
-    return `<div class="hotel"><div class="top">
-      <span class="nm">${h.maps?`<a href="${h.maps}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${h.name}</a>`:h.name}</span>
-      <span class="sc ${h.score>=4?"s4":h.score===3?"s3":""}">${h.score?"score "+h.score:"unscored"}</span></div>
-      <div class="meta">${h.area} · ${h.rooms||"?"} rooms · ADR $${h.adr?h.adr.toFixed(0):"?"} · condo ${h.condo||"?"}${flags.length?" · ":""}${flags.join(" · ")}</div>
-      ${h.agents.map(a=>`<div class="arow">
-        <span class="an">${a.link?`<a href="${a.link}" target="_blank" rel="noopener">${a.name}</a>`:a.name}</span>
-        <span class="ph">${a.phone}</span><span class="sp"></span>${badge(a.stage)}</div>`).join("")
-        || '<div class="empty">No agents yet.</div>'}
-    </div>`;}).join("") || `<div class="empty">No hotels match this filter.</div>`;
+  document.getElementById("tree").innerHTML = NODES.map(n=>{
+    const items = buckets[n.key], [bg, fg] = items.length ? TONE[n.tone] : TONE.gray;
+    const open = items.length && !collapsed.has(n.key);
+    const body = n.key==="WAITING"
+      ? `<div class="pills">${items.map(x=>`<span class="pill">${x.name}<small>${x.area}</small></span>`).join("")}</div>`
+      : `<div class="grid hgrid">${items.map(hotelCard).join("")}</div>`;
+    return `<div class="node${items.length?"":" off"}" style="--dot:${fg}">
+      <div class="nh" onclick="toggleNode('${n.key}')">
+        <span class="car">${items.length?(open?"▼":"▶"):"·"}</span>
+        <span class="nt">${n.title}</span>
+        <span class="nc" style="background:${bg};color:${fg}">${items.length}</span></div>
+      <div class="nw">${n.what}</div>
+      ${items.length && n.next?`<div class="nn">→ ${n.next}</div>`:""}
+      ${open?`<div class="nbody">${body}</div>`:""}
+    </div>`;}).join("");
 }
 
 function setArea(a){ area=a; render(); }
-function setHF(k){ hfilter=k; render(); }
+function toggleNode(k){ collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); }
+
 
 function demoData(){
-  const mk = (id,ar,nm,st,condo,rooms,adr,score,val,best,ags)=>({id,area:ar,name:nm,maps:"",status:st,condo,rooms,adr,adrFlag:"OK",score,validated:val,best,agents:ags});
-  const ag = (n,ph,stg,o,nx)=>({slot:1,link:"",name:n,email:"",phone:ph,suburb:"",stage:stg,sent:null,reply:null,next:nx?today():null,overdue:!!o,remark:""});
-  return [[
+  // Demo links: hotels get a real Maps search; agent profiles are placeholders
+  // (these are invented people) — live data uses the sheet's own URLs.
+  const demoMaps  = nm => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(nm + " Gold Coast QLD");
+  const demoAgent = n  => "https://example.com/agent-profile/" + n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const mk = (id,ar,nm,st,condo,rooms,adr,score,val,best,ags,flag)=>({id,area:ar,name:nm,maps:demoMaps(nm),
+    status:st,condo,rooms,adr,adrFlag:flag||"OK",score,validated:val,best,agents:ags});
+  const ag = (n,ph,stg,o,nx)=>({slot:1,link:demoAgent(n),name:n,email:"",phone:ph,suburb:"",stage:stg,
+    sent:null,reply:null,next:nx?today():null,overdue:!!o,remark:""});
+
+  const master = [
+    // enriched, waiting for human review
+    mk("TL-0011","SP SOUTH","Broadbeach Savannah","QUALIFIED","Yes",92,88,3,false,"QUEUED",[]),
+    mk("TL-0012","SP SOUTH","Phoenician Resort","QUALIFIED","Yes",140,6994,0,false,"QUEUED",[],"CHECK"),
+    mk("TL-0014","BROADBEACH","Hi Surf Beachfront","QUALIFIED","Yes",64,79,3,false,"QUEUED",[]),
+    // validated, no agents collected yet
+    mk("TL-0013","BROADBEACH","Aegean Resort","QUALIFIED","Yes",180,97,4,true,"QUEUED",[]),
+    // validated with agents, nobody messaged
+    mk("TL-0003","SP SOUTH","Meriton Suites Southport","QUALIFIED","Yes",208,115,3,true,"QUEUED",
+      [ag("T. Reyes","61 4 1111 2222","QUEUED"), ag("A. Kim","61 4 3333 4444","QUEUED")]),
+    mk("TL-0015","SP SOUTH","Xanadu Resort","QUALIFIED","Yes",88,71,4,true,"QUEUED",
+      [ag("J. Baptiste","61 4 2222 3333","QUEUED"), ag("P. Nguyen","61 4 4444 5555","QUEUED")]),
+    // messaged, 7-day clock running
+    mk("TL-0016","SP NORTH","Surfers Beachside Holiday","QUALIFIED","Yes",76,66,4,true,"MSG SENT",
+      [ag("C. Duval","61 4 6666 7777","MSG SENT",1)]),
+    mk("TL-0017","SP MIDDLE","Focus Apartments","QUALIFIED","Yes",210,92,3,true,"MSG SENT",
+      [ag("H. Iwata","61 4 8888 9999","MSG SENT",0,1), ag("G. Fontaine","61 4 1010 2020","QUEUED")]),
+    // replied, conversation open
     mk("TL-0001","SP NORTH","Chateau Beachside","QUALIFIED","Yes",100,69,4,true,"REPLIED",
       [ag("D. Harper","61 4 1234 5678","REPLIED",0,1), ag("M. Chen","61 4 2345 6789","QUEUED"), ag("S. Patel","61 4 3456 7890","QUEUED")]),
-    mk("TL-0002","SP MIDDLE","Mantra on View","QUALIFIED","Yes",355,106,4,true,"FORM BACK",
-      [ag("R. Novak","61 4 9876 5432","FORM BACK",0,1), ag("L. Ortiz","61 4 8765 4321","RECYCLED"), ag("K. Webb","61 4 7654 3210","MSG SENT",1)]),
-    mk("TL-0003","SP SOUTH","Meriton Suites Southport","QUALIFIED","Yes",208,115,3,false,"QUEUED",
-      [ag("T. Reyes","61 4 1111 2222","QUEUED"), ag("A. Kim","61 4 3333 4444","QUEUED")]),
     mk("TL-0004","SP NORTH","Paradise Island Resort","QUALIFIED","Yes",120,64,3,true,"CALL SET",
       [ag("B. Singh","61 4 5555 6666","CALL SET",0,1), ag("E. Moss","61 4 7777 8888","QUEUED")]),
+    // pro forma / presentation
+    mk("TL-0002","SP MIDDLE","Mantra on View","QUALIFIED","Yes",355,106,4,true,"FORM BACK",
+      [ag("R. Novak","61 4 9876 5432","FORM BACK",0,1), ag("L. Ortiz","61 4 8765 4321","RECYCLED"), ag("K. Webb","61 4 7654 3210","MSG SENT",1)]),
+    mk("TL-0018","SP MIDDLE","Circle on Cavill","QUALIFIED","Yes",240,128,4,true,"PRESENTATION",
+      [ag("V. Petrov","61 4 3030 4040","PRESENTATION",0,1)]),
+    // closed
+    mk("TL-0019","SP MIDDLE","Peninsula Private Apartments","QUALIFIED","Yes",68,84,4,true,"DEAL",
+      [ag("N. Okafor","61 4 5050 6060","DEAL")]),
+    // every agent recycled
+    mk("TL-0020","SP NORTH","Budds Beach Apartments","QUALIFIED","Yes",40,58,3,true,"RECYCLED",
+      [ag("F. Adeyemi","61 4 7070 8080","RECYCLED"), ag("W. Kowalski","61 4 9090 1010","RECYCLED")]),
+    // out of pipeline
     mk("TL-0005","SP MIDDLE","Dorsett Gold Coast","DISQUALIFIED — NOT CONDO","No",313,119,0,false,"QUEUED",[]),
-  ],[
-    {area:"SP NORTH",name:"Chateau Beachside",enriched:true},
-    {area:"SP NORTH",name:"Paradise Island Resort",enriched:true},
-    {area:"SP NORTH",name:"Budds Beach Apartments",enriched:false},
-    {area:"SP MIDDLE",name:"Mantra on View",enriched:true},
-    {area:"SP SOUTH",name:"Meriton Suites Southport",enriched:true},
-    {area:"SP SOUTH",name:"Broadbeach Savannah",enriched:false},
-    {area:"SP SOUTH",name:"Phoenician Resort",enriched:false},
-  ]];
+    mk("TL-0021","SP NORTH","Q1 Resort & Spa","DISQUALIFIED — MAJOR CHAIN","Yes",526,165,0,false,"QUEUED",[]),
+  ];
+
+  // SCRAPE mirrors MASTER (ENRICHED? = YES) plus the rows still queued for Manus.
+  const queued = [
+    {area:"SP NORTH", name:"Ocean Pacific Resort"},
+    {area:"SP NORTH", name:"Sandpiper Apartments"},
+    {area:"SP SOUTH", name:"Talisman Apartments"},
+    {area:"BROADBEACH", name:"Ultra Broadbeach"},
+    {area:"BROADBEACH", name:"Freshwater Point"},
+    {area:"BROADBEACH", name:"Sierra Grand"},
+  ];
+  const scrapeRows = master.map(h => ({area:h.area, name:h.name, enriched:true}))
+    .concat(queued.map(q => ({area:q.area, name:q.name, enriched:false})));
+
+  return [master, scrapeRows];
 }
 
 loadAll();
