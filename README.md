@@ -1,13 +1,25 @@
 # Tala pipeline dashboard
 
-Read-only dashboard for the pipeline tracker. The Google Sheet stays the single
-source of truth — this page only visualizes it. No backend, no database, no login.
+Dashboard for the pipeline tracker. Stages, scores and validation are edited here
+and written straight into the Google Sheet, which stays the single source of truth
+— the app writes *into* it rather than keeping its own copy. No database.
+
+See **DEPLOY.md** for putting it on Vercel, and **V2_REQUIREMENTS.md** for what is
+built and what is not.
 
 ## How it works
 
-Google Sheet (MASTER + SCRAPE tabs, published as CSV)
-        ↓  fetched on load + every 5 min
-This static page on Vercel (funnel, follow-up queue, hotel cards, scrape status)
+Google Sheet (MASTER, SCRAPE, LOG)
+        ↑↓  Sheets API, via Vercel functions in api/
+This page (workflow tree, follow-up queue, funnel, filters)
+
+Reads come back live, so a change is visible on the next refresh rather than
+minutes later. Writes are restricted to an allowlist of columns, addressed by
+building ID rather than row number, and every one is appended to the LOG tab.
+Formula columns cannot be written at all.
+
+Without a backend reachable the page falls back to published CSV and goes
+read-only, which is what happens if you open index.html straight off disk.
 
 ## Setup (10 minutes)
 
@@ -52,8 +64,10 @@ This static page on Vercel (funnel, follow-up queue, hotel cards, scrape status)
 
 ## Privacy note
 
-"Publish to web" makes the two tabs readable by anyone who has the exact URL.
-The URL is long and random, and the page never shows it, but if the tracker
-must be strictly private, switch to the Google Sheets API v4 with a read-only
-API key instead (share the sheet as anyone-with-link **viewer**, restrict the
-key to the Sheets API + your Vercel domain). The fetch code change is ~5 lines.
+The deployed app reaches the sheet through a service account, so the file itself
+should be set to **Restricted** — nothing needs link access once the backend is
+live. The app is behind a shared password (`APP_PASSWORD`).
+
+The published-CSV fallback is the exception: it requires the sheet to be readable
+by anyone with the link, which exposes agent names, emails and phone numbers. Use
+it for a quick look, not as the running setup.

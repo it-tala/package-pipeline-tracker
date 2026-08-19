@@ -13,7 +13,12 @@ import { api, tabs } from "./gsheets.mjs";
 
 const APPLY = process.argv.includes("--apply");
 const FORMULA_ROWS = 100;
-const maps = (n) => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(n + " Gold Coast QLD");
+// The region qualifier keeps the Maps search honest once the sheet is not
+// Gold Coast only.
+const REGION = { AUSTRALIA: "Gold Coast QLD", INDONESIA: "Bali Indonesia" };
+const maps = (n, country) =>
+  "https://www.google.com/maps/search/?api=1&query=" +
+  encodeURIComponent(n + " " + (REGION[country] || REGION.AUSTRALIA));
 const profile = (n) => "https://example.com/agent-profile/" + n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 // agent: [name, phone, suburb, stage, sentDate, lastReply, nextAction, remark]
@@ -106,6 +111,15 @@ const H = [
     agents: [A("F. Adeyemi", "61 4 7070 8080", "Surfers Paradise", "RECYCLED", "2026-07-18", "", "", "No reply in 7 days."),
              A("W. Kowalski", "61 4 9090 1010", "Surfers Paradise", "RECYCLED", "2026-07-29", "", "", "No reply in 7 days.")] },
 
+  // second country - the pipeline is worldwide, not Gold Coast only
+  { id: "TL-0019", country: "INDONESIA", area: "BALI - SEMINYAK", name: "Bhuana Suites Seminyak", addr: "Jl. Kayu Aya 12, Seminyak, Bali 80361",
+    status: "QUALIFIED", condo: "Yes", rooms: 58, adr: 74, rawRate: "IDR 1.180.000", chain: "No", reno: "", renoSrc: "", review: 4.1,
+    notes: "Villa-style units, original 2012 fitout.", rating: 2, big: "Yes", score: 4, valid: "YES",
+    agents: [A("I. Wirawan", "62 81 2345 6789", "Seminyak", "MSG SENT", "2026-08-16", "", "2026-08-19", "First contact sent.")] },
+  { id: "TL-0020", country: "INDONESIA", area: "BALI - CANGGU", name: "Echo Beach Residences", addr: "Jl. Pantai Batu Mejan, Canggu, Bali 80361",
+    status: "QUALIFIED", condo: "Yes", rooms: 42, adr: 66, rawRate: "IDR 1.050.000", chain: "No", reno: "", renoSrc: "", review: 4.3,
+    notes: "Strong ADR gap against renovated stock nearby.", rating: 1, big: "No", score: 4, valid: "", agents: [] },
+
   // out of pipeline
   { id: "TL-0017", area: "SP MIDDLE", name: "Dorsett Gold Coast", addr: "3 Charles Ave, Surfers Paradise QLD 4217",
     status: "DISQUALIFIED - NOT CONDO", condo: "No", rooms: 313, adr: 119, chain: "Yes", reno: 2022, renoSrc: "Press release", review: 4.5,
@@ -127,6 +141,9 @@ const QUEUE = [
   ["SP SOUTH", "Southport Backpackers YHA", 3.4, "AUD 38", "NO"],
   ["BROADBEACH", "The Wharf Tavern", 4.0, "AUD 0", "NO"],
   ["SP NORTH", "Palm Beach Hotel", 4.2, "AUD 45", "NO"],
+  ["BALI - CANGGU", "Batu Bolong Beach Apartments", 4.0, "IDR 890.000", "YES", "INDONESIA"],
+  ["BALI - SEMINYAK", "Petitenget Suites", 4.2, "IDR 1.320.000", "", "INDONESIA"],
+  ["BALI - ULUWATU", "Bingin Cliff Residences", 4.4, "IDR 1.640.000", "", "INDONESIA"],
 ];
 
 // ── build rows ────────────────────────────────────────────────────────
@@ -134,7 +151,7 @@ const BLANK_AGENT = ["", "", "", "", "", "", "", "", "", ""];
 const masterRows = H.map((h) => {
   const ags = [0, 1, 2].map((i) => h.agents[i] || BLANK_AGENT);
   return [
-    h.id, "AUSTRALIA", h.area, h.name, maps(h.name), h.addr, h.status, h.condo, h.rooms, h.adr, // 0-9
+    h.id, h.country || "AUSTRALIA", h.area, h.name, maps(h.name, h.country), h.addr, h.status, h.condo, h.rooms, h.adr, // 0-9
     null,                                                                                       // 10 K formula
     h.chain, h.reno, h.renoSrc, h.review, h.notes, h.rating, h.big, h.score, h.valid,            // 11-19
     null,                                                                                       // 20 U formula
@@ -147,8 +164,8 @@ const masterRows = H.map((h) => {
 const scrapeRows = [
   // The scraped rate is captured independently of Manus, so it is the anchor the
   // enriched ADR gets checked against. Phoenician's disagree on purpose.
-  ...H.map((h) => ["AUSTRALIA", h.area, h.name, maps(h.name), h.review, h.rawRate || `AUD ${h.adr}`, "2026-08-10", "YES"]),
-  ...QUEUE.map(([area, name, star, rate, proceed]) => ["AUSTRALIA", area, name, maps(name), star, rate, "2026-08-18", proceed]),
+  ...H.map((h) => [h.country || "AUSTRALIA", h.area, h.name, maps(h.name, h.country), h.review, h.rawRate || `AUD ${h.adr}`, "2026-08-10", "YES"]),
+  ...QUEUE.map(([area, name, star, rate, proceed, country]) => [country || "AUSTRALIA", area, name, maps(name, country), star, rate, "2026-08-18", proceed]),
 ];
 
 const n = masterRows.length;

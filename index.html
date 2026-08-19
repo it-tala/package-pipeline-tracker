@@ -53,6 +53,18 @@ h1{font-family:"Fraunces",serif;font-weight:560;font-size:27px;letter-spacing:-.
 .act:hover:not(:disabled){border-color:var(--teal);color:var(--teal)}
 .act.rc:hover:not(:disabled){border-color:var(--coral);color:var(--coral)}
 .act:disabled{opacity:.45;cursor:default}
+.filters{display:flex;flex-direction:column;gap:9px;margin:16px 0 20px}
+.frow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.frow .lbl{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:58px}
+.frow .chips{margin:0;flex:1}
+#q{flex:1;min-width:200px;max-width:420px;border:1px solid var(--line);border-radius:20px;padding:7px 14px;font:14px "Archivo";background:var(--card);color:var(--ink)}
+#q:focus{outline:none;border-color:var(--teal)}
+#qclear{border:0;background:none;color:var(--muted);font:13px "Archivo";cursor:pointer;padding:4px 6px}
+#qclear:hover{color:var(--coral)}
+.stg{border:1px solid transparent;border-radius:10px;padding:2px 6px;font:500 11.5px "Archivo";cursor:pointer;max-width:132px}
+.stg:disabled{opacity:.45;cursor:default}
+.vrow{display:flex;align-items:center;gap:8px;padding:8px 0 0;border-top:1px solid var(--line);margin-top:8px;font-size:12.5px;color:var(--muted);flex-wrap:wrap}
+.vrow .sp{flex:1}
 #gate{position:fixed;inset:0;background:var(--paper);display:none;place-items:center;z-index:50}
 #gate.on{display:grid}
 #gate form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 28px;width:min(340px,90vw)}
@@ -96,6 +108,9 @@ h1{font-family:"Fraunces",serif;font-weight:560;font-size:27px;letter-spacing:-.
 .nn{font-size:12.5px;color:var(--teal);margin:3px 0 0 18px;max-width:74ch}
 .nbody{margin:13px 0 0 18px}
 #err{background:var(--coral-soft);color:var(--coral);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none}
+#mode:empty{display:none}
+#mode{background:var(--amber-soft);color:var(--amber);border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0 0;line-height:1.55}
+#mode code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 6px;font-size:12.5px}
 footer{margin-top:26px;color:var(--muted);font-size:12px}
 @media (max-width:560px){body{padding:16px 12px 40px}h1{font-size:22px}}
 </style>
@@ -117,7 +132,15 @@ footer{margin-top:26px;color:var(--muted);font-size:12px}
 </header>
 <div class="sub" id="mode"></div>
 <div id="err"></div>
-<div class="chips" id="areas"></div>
+<div class="filters">
+  <div class="frow">
+    <input id="q" type="search" placeholder="Search building, agent, area, country or ID…" oninput="setQ(this.value)">
+    <button id="qclear" onclick="setQ('')" hidden>clear</button>
+    <span class="sub" id="qcount2"></span>
+  </div>
+  <div class="frow" id="countryrow" hidden><span class="lbl">Country</span><span class="chips" id="countries"></span></div>
+  <div class="frow"><span class="lbl">Area</span><span class="chips" id="areas"></span></div>
+</div>
 
 <div class="grid metrics" id="metrics"></div>
 
@@ -135,7 +158,7 @@ footer{margin-top:26px;color:var(--muted);font-size:12px}
 <div class="tree-s">Every building sits in exactly one step. Open a step to see what is parked there and what moves it forward.</div>
 <div id="tree"></div>
 
-<footer>Read-only view of the pipeline tracker. Every update happens in the spreadsheet; this page follows within ~5 minutes.</footer>
+<footer id="foot"></footer>
 
 <script src="config.js"></script>
 <script>
@@ -155,8 +178,17 @@ const STAGE_STYLE = {
   "FORM BACK":["var(--teal-soft)","var(--teal)"], "PRESENTATION":["var(--teal-soft)","var(--teal)"],
   "DEAL":["var(--teal)","#fff"], "RECYCLED":["var(--coral-soft)","var(--coral)"], "SKIP":["var(--gray-soft)","var(--muted)"]};
 
-let hotels = [], scrape = [], area = "ALL";
+let hotels = [], scrape = [], area = "ALL", country = "ALL", q = "";
 const collapsed = new Set();
+
+// Scraping is worldwide, so area chips alone stop scaling quickly: country scopes
+// the area list, and free text reaches anything the chips cannot.
+const haystack = x => [x.id, x.name, x.area, x.country, ...(x.agents||[]).map(a=>a.name)]
+  .filter(Boolean).join(" ").toLowerCase();
+const matches = x =>
+  (country==="ALL" || x.country===country) &&
+  (area==="ALL" || x.area===area) &&
+  (!q || haystack(x).includes(q));
 
 // -- Workflow tree ----------------------------------------------------
 // Every building sits in exactly one node. Order follows the pipeline:
@@ -240,7 +272,7 @@ function rowToHotel(r){
       sent:parseDate(r[b+AF.SENT]), reply:parseDate(r[b+AF.REPLY]), next:parseDate(r[b+AF.NEXT]),
       overdue:(r[b+AF.OVER]||"").trim().toUpperCase()==="MOVE ON", remark:r[b+AF.REMARK]||""});
   }
-  return {id:r[C.ID]||"", area:(r[C.AREA]||"").trim(), name:(r[C.NAME]||"").trim(),
+  return {id:r[C.ID]||"", country:(r[C.COUNTRY]||"").trim(), area:(r[C.AREA]||"").trim(), name:(r[C.NAME]||"").trim(),
     maps:r[C.MAPS]||"", status:(r[C.STATUS]||"").trim().toUpperCase(),
     condo:(r[C.CONDO]||"").trim(), rooms:+r[C.ROOMS]||0, adr:+r[C.ADR]||0,
     adrFlag:(r[C.ADRFLAG]||"").trim().toUpperCase(), score:+r[C.SCORE]||0,
@@ -289,8 +321,16 @@ async function loadAll(){
       country:(r[S.COUNTRY]||"").trim(), area:(r[S.AREA]||"").trim(), name:(r[S.NAME]||"").trim(),
       proceed:(r[S.PROCEED]||"").trim().toUpperCase(),
       enriched:(r[S.ENRICHED]||"").trim().toUpperCase()==="YES"}));
-    document.getElementById("mode").textContent = API ? ""
-      : "View only — start the local server (node tools/server.mjs) to update stages from here.";
+    // The usual cause of "where are the buttons" is opening index.html off disk,
+    // where there is no API to reach. Say so explicitly rather than just degrading.
+    document.getElementById("mode").innerHTML = API ? ""
+      : `<b>View only — nothing on this page can write to the sheet.</b><br>
+         No backend at <code>${location.origin || "file://"}</code>. Run <code>npm start</code> and open
+         <code>http://localhost:5173</code>, or use the deployed site — opening the file directly
+         cannot reach the API. Stage dropdowns, scores and validation buttons appear once it can.`;
+    document.getElementById("foot").textContent = API
+      ? "Stage changes, scores and validation written here go straight into the spreadsheet, and every change is recorded on the LOG tab. The sheet is still the single source of truth."
+      : "View only — no backend reachable, so this page is showing published CSV, which lags a few minutes behind the sheet.";
     document.getElementById("stamp").innerHTML = "updated <b>" + new Date().toLocaleTimeString() + "</b>";
     render();
   }catch(e){
@@ -341,11 +381,7 @@ async function act(btn, fn){
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = "…";
   try{ await fn(); await loadAll(); }
-  catch(e){
-    btn.disabled = false; btn.textContent = label;
-    const err = document.getElementById("err");
-    err.textContent = "Write failed: " + e.message; err.style.display = "block";
-  }
+  catch(e){ btn.disabled = false; btn.textContent = label; showErr(e); }
 }
 
 // Advance and recycle write exactly what the daily routine writes by hand.
@@ -364,6 +400,49 @@ function recycle(id, slot, btn){
   return act(btn, () => write({id, slot, field:"STAGE", value:"RECYCLED", note:"no reply in 7 days"}));
 }
 
+function showErr(e){
+  const err = document.getElementById("err");
+  err.textContent = "Write failed: " + (e.message || e);
+  err.style.display = "block";
+}
+
+// Dropdowns write on change; buttons go through act() so they show progress.
+function onSelect(id, slot, field, el){
+  el.disabled = true;
+  write({id, slot, field, value: el.value, note: "set from dashboard"})
+    .then(loadAll)
+    .catch(e => { el.disabled = false; showErr(e); });
+}
+function setValue(id, slot, field, value, btn){
+  return act(btn, () => write({id, slot, field, value, note: "set from dashboard"}));
+}
+
+/** Read-only badge without the API; a live stage dropdown with it. */
+function stagePicker(h, a){
+  if(!API || !h.id) return badge(a.stage);
+  const [bg, fg] = STAGE_STYLE[a.stage] || STAGE_STYLE["QUEUED"];
+  return `<select class="stg" style="background:${bg};color:${fg}"
+      onchange="onSelect('${h.id}',${a.slot},'STAGE',this)">
+    ${STAGE_ORDER.map(s => `<option value="${s}"${s===a.stage?" selected":""}>${s.toLowerCase()}</option>`).join("")}
+  </select>`;
+}
+
+/** Shown only where the human judgement is actually owed: enriched, not yet validated. */
+function reviewControls(h){
+  if(!API || !h.id || h.validated || h.status.startsWith("DISQUALIFIED")) return "";
+  return `<div class="vrow">
+    <span>score</span>
+    <select class="stg" style="background:var(--gray-soft);color:var(--muted)"
+        onchange="onSelect('${h.id}',null,'FINAL SCORE',this)">
+      <option value="">–</option>
+      ${[1,2,3,4].map(n => `<option value="${n}"${h.score===n?" selected":""}>${n}</option>`).join("")}
+    </select>
+    <span class="sp"></span>
+    <button class="act rc" onclick="setValue('${h.id}',null,'STATUS','DISQUALIFIED - NOT CONDO',this)">disqualify</button>
+    <button class="act" onclick="setValue('${h.id}',null,'VALIDATED?','YES',this)">mark validated</button>
+  </div>`;
+}
+
 function badge(stage){
   const [bg, fg] = STAGE_STYLE[stage] || STAGE_STYLE["QUEUED"];
   return `<span class="badge" style="background:${bg};color:${fg}">${stage.toLowerCase()}</span>`;
@@ -379,17 +458,40 @@ function hotelCard(h){
     <div class="meta">${h.area} · ${h.rooms||"?"} rooms · ADR $${h.adr?h.adr.toFixed(0):"?"} · condo ${h.condo||"?"}${flags.length?" · ":""}${flags.join(" · ")}</div>
     ${h.agents.map(a=>`<div class="arow">
       <span class="an">${agentLink(a)}</span>
-      <span class="ph">${a.phone}</span><span class="sp"></span>${badge(a.stage)}</div>`).join("")
+      <span class="ph">${a.phone}</span><span class="sp"></span>${stagePicker(h, a)}</div>`).join("")
       || '<div class="empty">No agents collected yet.</div>'}
+    ${reviewControls(h)}
   </div>`;
 }
 
 function render(){
-  const hs = hotels.filter(h => area==="ALL" || h.area===area);
-  const areas = [...new Set(hotels.map(h=>h.area).filter(Boolean))].sort();
+  const hs = hotels.filter(matches);
+  const chip = (on, label, fn, count) =>
+    `<span class="chip ${on?"on":""}" onclick="${fn}">${label}${count!=null?` <small>${count}</small>`:""}</span>`;
+
+  // Country chips only appear once there is more than one country to choose from.
+  // Enriched scrape rows are excluded so a building is not counted twice: once in
+  // MASTER and again as its own SCRAPE row.
+  const everything = hotels.concat(scrape.filter(s => !s.enriched));
+  const countries = [...new Set(everything.map(x=>x.country).filter(Boolean))].sort();
+  document.getElementById("countryrow").hidden = countries.length < 2;
+  document.getElementById("countries").innerHTML =
+    [chip(country==="ALL", "All", "setCountry('ALL')")].concat(
+      countries.map(c => chip(country===c, c, `setCountry('${c}')`,
+        everything.filter(x=>x.country===c).length))).join("");
+
+  // Areas are scoped to the chosen country, so a worldwide sheet does not spill
+  // hundreds of chips across the screen.
+  const inCountry = x => country==="ALL" || x.country===country;
+  const areas = [...new Set(everything.filter(inCountry).map(x=>x.area).filter(Boolean))].sort();
   document.getElementById("areas").innerHTML =
-    [`<span class="chip ${area==="ALL"?"on":""}" onclick="setArea('ALL')">All areas</span>`]
-    .concat(areas.map(a=>`<span class="chip ${area===a?"on":""}" onclick="setArea('${a}')">${a}</span>`)).join("");
+    [chip(area==="ALL", "All areas", "setArea('ALL')")].concat(
+      areas.map(a => chip(area===a, a, `setArea('${a}')`,
+        everything.filter(x=>inCountry(x) && x.area===a).length))).join("");
+
+  document.getElementById("qclear").hidden = !q;
+  document.getElementById("qcount2").textContent =
+    q ? `${hs.length} of ${hotels.length} buildings match` : "";
 
   // metrics
   const qualified = hs.filter(h=>h.status==="QUALIFIED");
@@ -442,7 +544,7 @@ function render(){
   Object.keys(buckets).forEach(k => buckets[k].sort((a,b)=> b.score-a.score || b.rooms-a.rooms));
 
   // Scrape rows only reach the tree until MASTER picks them up (ENRICHED? = YES).
-  const sc = scrape.filter(x => !x.enriched && (area==="ALL" || x.area===area));
+  const sc = scrape.filter(x => !x.enriched && matches(x));
   // Blank and "NOT YET" both mean nobody has made the call yet.
   const undecided = x => !x.proceed || x.proceed==="NOT YET";
   buckets.NEWSCRAPE = sc.filter(undecided);
@@ -467,6 +569,13 @@ function render(){
 }
 
 function setArea(a){ area=a; render(); }
+function setCountry(c){ country=c; area="ALL"; render(); }   // area list changes with country
+function setQ(v){
+  q = v.trim().toLowerCase();
+  const box = document.getElementById("q");
+  if(box.value !== v) box.value = v;
+  render();
+}
 function toggleNode(k){ collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); }
 
 
