@@ -18,7 +18,9 @@ This static page on Vercel (funnel, follow-up queue, hotel cards, scrape status)
    (Publishing exposes only those tabs, read-only, at an unguessable URL.)
 
 2. **Edit `config.js`**
-   Paste both URLs and set `DEMO_MODE: false`.
+   Paste both URLs. Until you do, the page falls back to reading the sheet by
+   `SHEET_ID`, which requires the file to be link-readable — publishing and then
+   setting the file to Restricted is the safer end state.
 
 3. **Deploy to Vercel**
    - Push this folder to a GitHub repo

@@ -37,8 +37,11 @@ one cohort to settle before starting the next.
 - **TALA_PIPELINE_TRACKER_TEMPLATE.xlsx** — new tracker template built to
   replace the older 47-column PACKAGE_MARKETING_MESSAGE_TRACKER. Tabs: README,
   SCRAPE, MASTER, LISTS (hidden).
-- **tala-pipeline-dashboard/** — read-only Vercel dashboard, built, not yet
-  deployed. Currently in `DEMO_MODE: true`.
+- **Dashboard** — reads and writes the live sheet through `api/`. Runs locally
+  with `npm start` (gcloud ADC, no login). Not yet deployed to Vercel.
+- **Live sheet** — `1ngkYK5XJijW5JIfUD14IzxAQHxBYXVSGwa9mGejsOhI`, seeded with a
+  demo dataset covering every pipeline step. Tabs: README, LISTS, RAW, SCRAPE,
+  MASTER, MANUS_IN, LOG.
 - Outreach status at last handover: SP NORTH contacted with partial replies,
   SP MIDDLE furthest along with some pro forma forms returned, SP SOUTH agents
   collected but outreach not started.
@@ -49,9 +52,9 @@ one cohort to settle before starting the next.
 
 | Decision | Reasoning |
 |---|---|
-| **Spreadsheet is the single source of truth** | All updates happen in the sheet. Considered Supabase as master; rejected for now — two writable sources means constant reconciliation. |
-| **Dashboard is strictly read-only** | It visualizes, never writes. This is what keeps the system simple. |
-| **No backend** | Google Sheets "Publish to web" → CSV → static page on Vercel. No database, no API keys, no auth. |
+| **Spreadsheet is the single source of truth** | All updates happen in the sheet — the app writes *into* it rather than alongside it, so there is still one copy of every value. Supabase-as-master rejected twice: two writable stores means constant reconciliation. **Revisit when** more than one person works the pipeline at once, per-user permissions are needed, or the pipeline has to feed another system. Not before. |
+| **Dashboard writes an allowlisted set of columns** | Superseded read-only in Aug 2026. Formula columns (`ADR FLAG`, `BEST STAGE`, `OVERDUE?`) stay untouchable, every write is keyed by ID and appended to LOG. |
+| **Thin backend, still no database** | Vercel serverless functions in `api/`, service account auth, shared-password gate. Zero npm dependencies, no build step. See DEPLOY.md. |
 | **Stages live per agent, not per hotel** | Agents are contacted sequentially and each has its own 7-day clock. Hotel-level status is derived (BEST STAGE = furthest agent). |
 | **Human owns judgment, Manus owns collection** | Renovation rating, big rooms, final score are always human-filled. Manus collects the signals. |
 | **Rate-vs-area comparison is a sheet formula, not a Manus task** | ADR for every hotel in the area is already collected; comparing is arithmetic. |
@@ -67,6 +70,12 @@ history, listings count, dominant suburb.
 - **ADR** — currency conversion fails. A real output had a hotel at
   $6,994.50/night. The protocol's own ">1,500 re-check" rule did NOT catch it.
   Manus does not audit its own numbers.
+  **Root cause found Aug 2026:** Maps was being scraped in Indonesian locale, so
+  prices arrived as `Rp 1,52M` — IDR, with the comma as a *decimal* separator.
+  Manus was guessing at a unit it was never told. Fix is upstream: set Maps to
+  English (Australia) / AUD before scraping. Downstream, cross-check Manus's ADR
+  against `DAILY RATE (RAW)` on SCRAPE — a ratio check catches what the absolute
+  threshold missed.
 - **Phone format** — the "no `+`, no `=`" rule gets violated by mid-batch. A
   leading `=` breaks the cell as a spreadsheet formula.
 - **Listing links** — the weakest link, literally. Real outputs contained search
@@ -87,22 +96,27 @@ contains two separate hotel clusters. Isolate each cluster before processing.
 
 ## The tracker (TALA_PIPELINE_TRACKER_TEMPLATE.xlsx)
 
-**SCRAPE tab** — raw Instant Data Scraper output, one area per batch.
-Columns: AREA | HOTEL NAME | GOOGLE MAPS LINK | STAR RATING | DAILY RATE (RAW) |
-DATE SCRAPED | ENRICHED?
+**SCRAPE tab** — cleaned Instant Data Scraper output, one area per batch.
+Columns: COUNTRY | AREA | HOTEL NAME | GOOGLE MAPS LINK | STAR RATING |
+DAILY RATE (RAW) | DATE SCRAPED | PROCEED TO MANUS | ENRICHED?
 
-`ENRICHED?` is a formula — flips to YES automatically when the hotel name
-appears in MASTER. Red "NOT YET" = still waiting for Manus.
+Two gate columns, and they answer different questions. `PROCEED TO MANUS` is the
+human call *before* enrichment — blank = undecided, NO = wrong stock type, don't
+spend Manus budget on it. `ENRICHED?` is a formula that flips to YES *after*,
+when the hotel name appears in MASTER. Red "NOT YET" = still waiting for Manus.
+
+Raw scraper output is never pasted here directly — see **SCRAPE_CLEANING.md**
+for the RAW/CLEAN tab formulas, the duplicate check, and the raw column decode.
 
 **MASTER tab** — one row per hotel, three agent blocks side by side.
 
-Property block (cols A–T):
-`ID | AREA | HOTEL NAME | GOOGLE MAPS LINK | ADDRESS | STATUS | CONDO CONFIRMED |
-ROOMS | ADR (USD) | ADR FLAG | MAJOR CHAIN | YEAR RENOVATED | RENO SOURCE |
-REVIEW SCORE | CONDITION NOTES | RENOVATION RATING | BIG ROOMS? | FINAL SCORE |
-VALIDATED? | BEST STAGE`
+Property block (cols A–U):
+`ID | COUNTRY | AREA | HOTEL NAME | GOOGLE MAPS LINK | ADDRESS | STATUS |
+CONDO CONFIRMED | ROOMS | ADR (USD) | ADR FLAG | MAJOR CHAIN | YEAR RENOVATED |
+RENO SOURCE | REVIEW SCORE | CONDITION NOTES | RENOVATION RATING | BIG ROOMS? |
+FINAL SCORE | VALIDATED? | BEST STAGE`
 
-Agent blocks — 11 columns each, repeated 3×, starting at col U (A1), AF (A2), AQ (A3):
+Agent blocks — 11 columns each, repeated 3×, starting at col V (A1), AG (A2), AR (A3):
 `LINK | AGENT NAME | EMAIL | PHONE | DOMINANT SUBURB | STAGE | SENT DATE |
 LAST REPLY | NEXT ACTION | OVERDUE? | REMARK`
 
@@ -110,6 +124,8 @@ Built-in formulas:
 - **ADR FLAG** — `CHECK` (red) when ADR > 1500 or < 20. Catches the conversion bug at paste time.
 - **OVERDUE?** — `MOVE ON` (red) when STAGE = MSG SENT and SENT DATE > 7 days ago.
 - **BEST STAGE** — furthest stage across the three agents, via INDEX/MATCH against LISTS.
+  Guard the `MAX(...)=0` case: plain `INDEX(range, 0)` returns `#REF!` for any
+  building whose agents are all blank, which is most of the review queue.
 
 **Stage vocabulary** (LISTS tab, order matters — it defines progress):
 `SKIP → RECYCLED → QUEUED → MSG SENT → REPLIED → CALL SET → FORM BACK →
@@ -129,7 +145,7 @@ Static single-page app. Stack: vanilla JS + PapaParse from CDN. No build step.
 ```
 dashboard/
   index.html    ← the entire app; column map is at the top of the <script>
-  config.js     ← the ONLY file the user edits (CSV URLs, DEMO_MODE, refresh interval)
+  config.js     ← the ONLY file the user edits (SHEET_ID / CSV URLs, refresh interval)
   vercel.json   ← static config, no-store cache headers
   package.json  ← metadata only; `npm run dev` serves locally
   README.md     ← setup steps
@@ -137,16 +153,20 @@ dashboard/
 
 Renders: metrics row (hotels / qualified / validated / messaged / replied / reply
 rate / forms / deals), follow-up queue (overdue first, then due today), funnel by
-BEST STAGE, scrape→enrichment status per area, and hotel cards sorted by score
-then stage. Area filter chips across the top.
+BEST STAGE, and a **workflow tree** — every building filed under exactly one
+pipeline step, each step stating what is parked there and what moves it forward.
+The tree replaced the old filter chips and the separate scrape-status panel.
+Area filter chips across the top.
 
 Design tokens (keep consistent if extending): paper `#F7F6F1`, ink `#24261F`,
 teal `#0F6E56` (progress/good), coral `#B5401F` (needs attention), violet
 `#4A4390` (in-flight outreach), amber `#8A5A0B`. Fonts: Fraunces (display),
 Archivo (body).
 
-**To connect it:** Sheets → File → Share → Publish to web → MASTER tab as CSV →
-paste into config.js → repeat for SCRAPE → set `DEMO_MODE: false`.
+**To connect it:** it already is — `SHEET_ID` in config.js drives a gviz CSV
+read, which needs the file link-readable. To close that off, publish the two tabs
+(Sheets → File → Share → Publish to web → CSV), paste the URLs into config.js,
+and set the file itself to Restricted. Publishing is independent of sharing.
 Deploy: push to GitHub, import in Vercel, framework preset "Other", no build
 command.
 
@@ -170,7 +190,7 @@ blocking; sequencing and volume management are deliberate, not incidental.
 
 ## Open items / next steps
 
-- **Deploy the dashboard** — still in DEMO_MODE, never pushed to Vercel.
+- **Deploy the dashboard** — runs against the live sheet, never pushed to Vercel.
 - **Migrate live data** from PACKAGE_MARKETING_MESSAGE_TRACKER into the new
   template (map old checkbox columns → STAGE values).
 - **SP SOUTH outreach** — agents collected, outreach not started.

@@ -1,14 +1,22 @@
 // ── TALA DASHBOARD CONFIG ─────────────────────────────────────────────
-// This is the ONLY file you need to edit.
+// This is the ONLY file you need to edit. The page reads the live sheet; there
+// is no demo data in the app any more.
 //
-// 1. In Google Sheets: File → Share → Publish to web
-// 2. Select the MASTER tab, format = CSV → copy the URL below
-// 3. Repeat for the SCRAPE tab
-// 4. Leave DEMO_MODE = true until both URLs are filled in,
-//    then set it to false.
+// Two ways to reach the tabs, in order of preference:
+//
+// A. PUBLISHED CSV (preferred)
+//    Sheets → File → Share → Publish to web → MASTER tab → CSV → copy the URL
+//    into MASTER_CSV_URL, then repeat for SCRAPE.
+//    Publishing is separate from file sharing, so the file itself can stay on
+//    "Restricted" and nobody needs edit access to view the dashboard.
+//
+// B. SHEET_ID fallback (used automatically when the URLs above are unset)
+//    No publish step, but the file must be readable by "anyone with the link",
+//    which makes agent names, emails and phones publicly readable. Fine for a
+//    quick look, not how this should run.
 
 window.TALA_CONFIG = {
-  DEMO_MODE: true,
+  SHEET_ID: "1ngkYK5XJijW5JIfUD14IzxAQHxBYXVSGwa9mGejsOhI",
 
   MASTER_CSV_URL: "PASTE_MASTER_PUBLISHED_CSV_URL_HERE",
   SCRAPE_CSV_URL: "PASTE_SCRAPE_PUBLISHED_CSV_URL_HERE",
